@@ -1,13 +1,46 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../app/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model Usuario {
+  id          Int          @id @default(autoincrement())
+  nome        String
+  email       String       @unique
+  senha       String
+  isAdmin     Boolean      @default(false)
+  residencias Residencia[]
+  criadoEm    DateTime     @default(now())
+}
+
+model Residencia {
+  id          Int         @id @default(autoincrement())
+  nome        String      // Ex: "Casa Principal"
+  usuarioId   Int
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id])
+  disjuntores Disjuntor[]
+  criadoEm    DateTime    @default(now())
+}
+
+model Disjuntor {
+  id             Int        @id @default(autoincrement())
+  nome           String     // Ex: "Geral", "Chuveiro", "Ar-condicionado"
+  limiteCorrente Float      // Limiar de segurança em Amperes (para disparar o alerta)
+  residenciaId   Int
+  residencia     Residencia @relation(fields: [residenciaId], references: [id], onDelete: Cascade)
+  leituras       Leitura[]
+}
+
+model Leitura {
+  id           Int       @id @default(autoincrement())
+  tensaoRms    Float
+  correnteRms  Float
+  potencia     Float
+  alerta       Boolean   @default(false)
+  disjuntorId  Int
+  disjuntor    Disjuntor @relation(fields: [disjuntorId], references: [id], onDelete: Cascade)
+  registradoEm DateTime  @default(now())
 }
