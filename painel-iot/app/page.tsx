@@ -1,120 +1,115 @@
-import { prisma } from '../lib/prisma';
-import AutoRefresh from '../components/AutoRefresh';
-import GraficoConsumo from '../components/GraficoConsumo';
+import { prisma } from "@/lib/prisma";
+import Link from "next/link";
 
-// Força a página a sempre buscar dados novos do banco, sem usar cache antigo
-export const dynamic = 'force-dynamic';
-
-export default async function Dashboard() {
-  // Busca a residência e as ÚLTIMAS 10 leituras de cada disjuntor para o histórico
-  const residencia = await prisma.residencia.findFirst({
+export default async function RelatorioCopel({ params }: { params: { id: string } }) {
+  const cliente = await prisma.usuario.findUnique({
+    where: { id: params.id },
     include: {
-      disjuntores: {
+      residencias: {
         include: {
-          leituras: {
-            orderBy: { registradoEm: 'desc' },
-            take: 10, 
-          },
-        },
-      },
-    },
+          disjuntores: {
+            include: {
+              leituras: true // No futuro, pode adicionar: { where: { registradoEm: { gte: dataInicio } } }
+            }
+          }
+        }
+      }
+    }
   });
 
-  // Bloco 1: Tela de carregamento
-  if (!residencia || residencia.disjuntores.length === 0) {
-    return (
-      <div className="min-h-screen bg-[#F6FAFD] flex items-center justify-center font-sans">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1A3D63] mx-auto mb-4"></div>
-          <h2 className="text-2xl font-bold text-[#1A3D63]">Aguardando conexão...</h2>
-          <p className="text-gray-500">Nenhum dado recebido do ESP32 ainda.</p>
-        </div>
-      </div>
-    );
-  }
+  if (!cliente) return <div className="text-white p-8">Cliente não encontrado.</div>;
 
-  // Bloco 2: O Dashboard Principal
-  return (
-    <div className="min-h-screen bg-[#F6FAFD] p-8 font-sans">
-      <AutoRefresh intervalo={3000} /> 
+  // Lógica Financeira - Padrão Copel
+  const TARIFA_KWH = 0.85; 
+  let consumoTotalKwh = 0;
+
+  const detalhesCircuitos = cliente.residencias.flatMap(r => 
+    r.disjuntores.map(d => {
+      // Cálculo TCC: Soma das potências convertida para kWh (simplificado)
+      const kwhCircuito = d.leituras.reduce((acc, leitura) => acc + (leitura.potencia / 1000), 0);
+      consumoTotalKwh += kwhCircuito;
       
-      <header className="mb-8 flex justify-between items-center bg-[#1A3D63] p-6 rounded-xl shadow-lg">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-wide">VoltGuard</h1>
-          <p className="text-[#B3CFE5] mt-1 text-sm">{residencia.nome}</p>
+      return { 
+        nome: d.nome, 
+        kwh: kwhCircuito, 
+        valor: kwhCircuito * TARIFA_KWH 
+      };
+    })
+  );
+
+  const subtotal = consumoTotalKwh * TARIFA_KWH;
+  const estimativaImpostos = subtotal * 0.29; // ~29% de encargos tributários
+  const totalFatura = subtotal + estimativaImpostos;
+
+  return (
+    <div className="min-h-screen bg-[#0A1931] text-[#F6FAFD] p-8">
+      <div className="max-w-3xl mx-auto bg-white text-black p-8 rounded-lg shadow-2xl print:shadow-none">
+        
+        {/* Cabeçalho da Fatura */}
+        <div className="flex justify-between items-start border-b-4 border-orange-500 pb-6 mb-6">
+          <div>
+            <h1 className="text-3xl font-black text-orange-600 tracking-tighter">COPEL <span className="text-gray-700 text-lg font-medium">| Simulação VoltGuard</span></h1>
+            <p className="text-sm text-gray-500 mt-1">Conta de Energia Elétrica - Uso Residencial</p>
+          </div>
+          <div className="text-right">
+            <p className="font-bold text-gray-700">Mês de Referência</p>
+            <p className="text-xl font-black uppercase">Outubro 2026</p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-          </span>
-          <span className="text-[#B3CFE5] font-medium">Sistema Online</span>
+
+        {/* Dados do Cliente */}
+        <div className="bg-gray-100 p-4 rounded mb-8">
+          <p className="font-bold text-lg uppercase">{cliente.nome}</p>
+          <p className="text-gray-600">{cliente.email}</p>
+          <p className="text-gray-600 mt-2 text-sm font-mono">ID Instalação: {cliente.id.split('-')[0]}</p>
         </div>
-      </header>
 
-      {/* Grid de Disjuntores (Agora com 2 colunas para comportar bem os gráficos) */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {residencia.disjuntores.map((disjuntor) => {
-          const leituras = disjuntor.leituras;
-          const ultimaLeitura = leituras[0]; // A leitura no topo da lista ainda é a mais recente
-          const emAlerta = ultimaLeitura?.alerta || false;
+        {/* Detalhamento de Consumo por Circuito */}
+        <h2 className="font-bold text-lg border-b-2 border-gray-200 pb-2 mb-4">Demonstrativo de Consumo por Circuito</h2>
+        <table className="w-full text-left mb-8 text-sm">
+          <thead>
+            <tr className="bg-gray-200">
+              <th className="p-2">Circuito Monitorizado</th>
+              <th className="p-2 text-right">Consumo (kWh)</th>
+              <th className="p-2 text-right">Tarifa (R$)</th>
+              <th className="p-2 text-right">Valor (R$)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detalhesCircuitos.map((circuito, index) => (
+              <tr key={index} className="border-b border-gray-100">
+                <td className="p-2 font-semibold text-gray-700">{circuito.nome}</td>
+                <td className="p-2 text-right">{circuito.kwh.toFixed(2)}</td>
+                <td className="p-2 text-right">{TARIFA_KWH.toFixed(2)}</td>
+                <td className="p-2 text-right">{(circuito.valor).toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
-          // Preparação dos dados para o Recharts (inverte a ordem cronológica)
-          const dadosGrafico = leituras.map((l) => ({
-            horario: new Date(l.registradoEm).toLocaleTimeString('pt-BR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit'
-            }),
-            corrente: l.correnteRms,
-            potencia: l.potencia
-          })).reverse();
-
-          return (
-            <div 
-              key={disjuntor.id} 
-              className={`border-2 rounded-xl p-6 shadow-sm transition-shadow flex flex-col justify-between ${
-                emAlerta ? 'bg-red-50 border-red-500 animate-pulse' : 'bg-white border-[#B3CFE5] hover:shadow-md'
-              }`}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h2 className={`text-xl font-bold uppercase ${emAlerta ? 'text-red-700' : 'text-[#0A1931]'}`}>
-                  {disjuntor.nome.replace('_', ' ')}
-                </h2>
-                
-                {emAlerta ? (
-                  <span className="bg-red-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
-                    ⚠️ ALERTA
-                  </span>
-                ) : (
-                  <span className="bg-[#4A7FA7] text-white text-xs px-2 py-1 rounded">
-                    {disjuntor.limiteCorrente}A Max
-                  </span>
-                )}
-              </div>
-
-              {ultimaLeitura ? (
-                <>
-                  <div className="space-y-2 mb-2 flex justify-between items-end border-b pb-4 border-gray-100">
-                    <p className={emAlerta ? 'text-red-900' : 'text-gray-600'}>
-                      Corrente Atual: <span className={`font-bold text-2xl ml-1 ${emAlerta ? 'text-red-600' : 'text-[#1A3D63]'}`}>
-                        {ultimaLeitura.correnteRms} A
-                      </span>
-                    </p>
-                    <p className={`text-sm ${emAlerta ? 'text-red-700' : 'text-gray-500'}`}>
-                      {ultimaLeitura.potencia} W
-                    </p>
-                  </div>
-                  
-                  {/* Renderização da curva de consumo no tempo */}
-                  <GraficoConsumo dados={dadosGrafico} />
-                </>
-              ) : (
-                <p className="text-gray-400 italic">Aguardando leitura...</p>
-              )}
+        {/* Fecho Financeiro */}
+        <div className="flex justify-end">
+          <div className="w-64 bg-gray-50 p-4 rounded border border-gray-200">
+            <div className="flex justify-between mb-2 text-sm text-gray-600">
+              <span>Subtotal Consumo:</span>
+              <span>R$ {subtotal.toFixed(2)}</span>
             </div>
-          );
-        })}
+            <div className="flex justify-between mb-4 text-sm text-gray-600">
+              <span>Trib. (ICMS/PIS/COF):</span>
+              <span>R$ {estimativaImpostos.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-black text-xl text-orange-600 border-t-2 border-gray-200 pt-2">
+              <span>Total a Pagar:</span>
+              <span>R$ {totalFatura.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 flex justify-center print:hidden">
+          <Link href="/" className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded font-bold transition-colors">
+            Voltar ao Painel
+          </Link>
+        </div>
       </div>
     </div>
   );
