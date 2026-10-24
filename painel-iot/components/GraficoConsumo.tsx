@@ -1,62 +1,55 @@
-'use client';
+"use client";
 
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer 
-} from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-// Define o formato dos dados que o gráfico vai receber
-interface LeituraGrafico {
-  horario: string;
-  corrente: number;
-  potencia: number;
-}
+export default function GraficoConsumo({ disjuntores }: { disjuntores: any[] }) {
+  // Paleta de cores para diferenciar até 5 circuitos no mesmo gráfico
+  const cores = ["#FF9800", "#03A9F4", "#4CAF50", "#E91E63", "#9C27B0"];
 
-interface GraficoProps {
-  dados: LeituraGrafico[];
-}
-
-export default function GraficoConsumo({ dados }: GraficoProps) {
-  // Se não houver dados o suficiente, mostra um aviso amigável
-  if (!dados || dados.length === 0) {
+  if (!disjuntores || disjuntores.length === 0) {
     return (
-      <div className="h-48 flex items-center justify-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
-        <p className="text-gray-500 text-sm">Aguardando histórico de leituras...</p>
+      <div className="bg-[#1A3D63] p-6 rounded-lg shadow-lg border border-[#4A7FA7] flex items-center justify-center h-[400px]">
+        <p className="text-gray-400">Nenhum circuito registado. Fale com o administrador.</p>
       </div>
     );
   }
 
+  // Geração de dados fictícios para visualização baseada nos SEUS circuitos reais
+  const dadosExemplo = [
+    { hora: '08:00' }, { hora: '10:00' }, { hora: '12:00' }, 
+    { hora: '14:00' }, { hora: '16:00' }, { hora: '18:00' }
+  ];
+
+  dadosExemplo.forEach((ponto) => {
+    disjuntores.forEach(d => {
+      // Simula um consumo diferente para cada circuito
+      (ponto as any)[d.nome] = Math.floor(Math.random() * 2000) + 100; 
+    });
+  });
+
   return (
-    <div className="h-56 w-full mt-6">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={dados} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-          <XAxis 
-            dataKey="horario" 
-            tick={{ fontSize: 12, fill: '#6B7280' }} 
-            tickMargin={10}
-          />
-          <YAxis 
-            yAxisId="esquerda" 
-            tick={{ fontSize: 12, fill: '#6B7280' }} 
-          />
-          <Tooltip 
-            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-          />
-          <Line 
-            yAxisId="esquerda"
-            type="monotone" 
-            dataKey="corrente" 
-            stroke="#1A3D63" 
-            strokeWidth={3}
-            dot={{ r: 3, fill: '#1A3D63' }}
-            name="Corrente (A)" 
-          />
+    <div className="bg-[#1A3D63] p-6 rounded-lg shadow-lg border border-[#4A7FA7] w-full h-[400px]">
+      <h3 className="text-xl font-semibold mb-6 text-[#F6FAFD]">Consumo em Tempo Real</h3>
+      <ResponsiveContainer width="100%" height="85%">
+        <LineChart data={dadosExemplo} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#4A7FA7" opacity={0.2} />
+          <XAxis dataKey="hora" stroke="#B3CFE5" fontSize={12} />
+          <YAxis stroke="#B3CFE5" fontSize={12} />
+          <Tooltip contentStyle={{ backgroundColor: '#0A1931', borderColor: '#4A7FA7', color: '#F6FAFD' }} />
+          <Legend verticalAlign="top" height={36} iconType="circle" />
+          
+          {/* Gera uma linha automaticamente para cada circuito existente */}
+          {disjuntores.map((d, index) => (
+            <Line 
+              key={d.id}
+              type="monotone" 
+              dataKey={d.nome} 
+              stroke={cores[index % cores.length]} 
+              strokeWidth={3} 
+              dot={{ r: 4 }} 
+              activeDot={{ r: 8 }} 
+            />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     </div>

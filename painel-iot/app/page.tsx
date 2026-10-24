@@ -4,15 +4,24 @@ import { redirect } from "next/navigation";
 import { prisma } from "../lib/prisma";
 import Link from "next/link";
 import BotaoNovoCliente from "../components/BotaoNovoCliente";
+import GraficoConsumo from "../components/GraficoConsumo";
 
 export default async function Dashboard() {
   const session = await getServerSession(authOptions);
 
-  if (!session) {
-    redirect("/login");
+  if (!session || !session.user?.email) {
+    redirect("/api/auth/signin");
   }
 
-  if ((session.user as any).role === "ADMIN") {
+  // Busca o utilizador atual na base de dados para garantir o ID e a Role
+  const usuarioAtual = await prisma.usuario.findUnique({
+    where: { email: session.user.email }
+  });
+
+  if (!usuarioAtual) redirect("/api/auth/signin");
+
+  // VISTA DO ADMINISTRADOR
+  if (usuarioAtual.role === "ADMIN") {
     const clientes = await prisma.usuario.findMany({
       where: { role: "CLIENTE" },
       include: { residencias: true }
@@ -69,11 +78,31 @@ export default async function Dashboard() {
     );
   }
 
+// VISTA DO CLIENTE NORMAL
+  
+  // Busca as residências e circuitos reais deste utilizador
+  const residencias = await prisma.residencia.findMany({
+    where: { usuarioId: usuarioAtual.id },
+    include: { disjuntores: true }
+  });
+  const disjuntoresCliente = residencias.flatMap(r => r.disjuntores);
+
   return (
     <div className="min-h-screen bg-[#0A1931] text-[#F6FAFD] p-8 flex flex-col items-center justify-center">
-      <h1 className="text-3xl font-bold mb-4">Painel do Cliente</h1>
-      <p className="mb-8">Os seus gráficos de monitorização em tempo real aparecerão aqui.</p>
-      <Link href="/api/auth/signout" className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded font-bold transition-colors">Sair da Conta</Link>
+      <h1 className="text-3xl font-bold mb-8 w-full max-w-4xl text-left">Olá, {usuarioAtual.nome}</h1>
+      
+      <div className="w-full max-w-4xl mb-8">
+        <GraficoConsumo disjuntores={disjuntoresCliente} />
+      </div>
+      
+      <div className="flex gap-4 w-full max-w-4xl justify-end">
+        <Link href={`/cliente/${usuarioAtual.id}/relatorio`} className="bg-orange-500 hover:bg-orange-400 text-white px-6 py-2 rounded font-bold transition-colors">
+          Ver Minha Fatura Copel
+        </Link>
+        <Link href="/api/auth/signout" className="bg-red-500 hover:bg-red-600 px-6 py-2 rounded font-bold transition-colors">
+          Sair da Conta
+        </Link>
+      </div>
     </div>
   );
 }

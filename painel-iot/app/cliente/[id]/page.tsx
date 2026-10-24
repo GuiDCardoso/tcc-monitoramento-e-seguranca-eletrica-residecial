@@ -1,8 +1,11 @@
 import { prisma } from "../../../lib/prisma";
 import Link from "next/link";
 import FormCircuito from "./FormCircuito";
+import { revalidatePath } from "next/cache";
 
-export default async function PaginaCliente({ params }: { params: { id: string } }) {
+export default async function PaginaCliente(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+
   const cliente = await prisma.usuario.findUnique({
     where: { id: params.id },
     include: { residencias: { include: { disjuntores: true } } }
@@ -11,6 +14,15 @@ export default async function PaginaCliente({ params }: { params: { id: string }
   if (!cliente) return <div className="text-white p-8">Cliente não encontrado.</div>;
 
   const disjuntores = cliente.residencias.flatMap(r => r.disjuntores);
+
+  async function excluirCircuito(formData: FormData) {
+    "use server";
+    const circuitoIdString = formData.get("circuitoId") as string;
+    const circuitoIdNumero = parseInt(circuitoIdString, 10);
+    
+    await prisma.disjuntor.delete({ where: { id: circuitoIdNumero } });
+    revalidatePath(`/cliente/${params.id}`);
+  }
 
   return (
     <div className="min-h-screen bg-[#0A1931] text-[#F6FAFD] p-8">
@@ -34,17 +46,26 @@ export default async function PaginaCliente({ params }: { params: { id: string }
                 <th className="p-3">ID do Hardware</th>
                 <th className="p-3">Nome do Circuito</th>
                 <th className="p-3">Limite de Segurança</th>
+                <th className="p-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {disjuntores.length === 0 ? (
-                <tr><td colSpan={3} className="p-4 text-center text-gray-400">Nenhum circuito registado.</td></tr>
+                <tr><td colSpan={4} className="p-4 text-center text-gray-400">Nenhum circuito registado.</td></tr>
               ) : (
                 disjuntores.map(d => (
                   <tr key={d.id} className="border-b border-[#4A7FA7] hover:bg-[#2A4D73]">
                     <td className="p-3 font-mono text-yellow-400">{d.id}</td>
                     <td className="p-3">{d.nome}</td>
                     <td className="p-3">{d.limiteCorrente} A</td>
+                    <td className="p-3 text-right">
+                      <form action={excluirCircuito}>
+                        <input type="hidden" name="circuitoId" value={d.id} />
+                        <button type="submit" className="text-red-500 hover:text-red-400 font-bold transition-colors">
+                          Excluir
+                        </button>
+                      </form>
+                    </td>
                   </tr>
                 ))
               )}
