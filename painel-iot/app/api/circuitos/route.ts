@@ -1,25 +1,38 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { usuarioId, nomeDisjuntor, limiteCorrente } = await req.json();
+    const body = await request.json();
+    const { usuarioId, nome, limiteCorrente } = body;
 
-    let residencia = await prisma.residencia.findFirst({ where: { usuarioId } });
+    // 1. Procura se o cliente já tem uma Residência registada
+    let residencia = await prisma.residencia.findFirst({
+      where: { usuarioId: usuarioId }
+    });
+
+    // 2. Se não tiver, cria uma Residência padrão automaticamente
     if (!residencia) {
-      residencia = await prisma.residencia.create({ data: { nome: "Casa Principal", usuarioId } });
+      residencia = await prisma.residencia.create({
+        data: {
+          nome: "Casa Principal",
+          usuarioId: usuarioId
+        }
+      });
     }
 
-    const disjuntor = await prisma.disjuntor.create({
-      data: { 
-        nome: nomeDisjuntor, 
-        limiteCorrente: parseFloat(limiteCorrente), 
-        residenciaId: residencia.id 
+    // 3. Cria o Circuito (Disjuntor) vinculado a essa Residência
+    const novoCircuito = await prisma.disjuntor.create({
+      data: {
+        nome: nome,
+        limiteCorrente: limiteCorrente,
+        residenciaId: residencia.id
       }
     });
 
-    return NextResponse.json({ success: true, disjuntor });
+    return NextResponse.json(novoCircuito, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: "Erro ao criar circuito." }, { status: 500 });
+    console.error("Erro ao criar circuito:", error);
+    return NextResponse.json({ error: "Erro interno ao criar circuito" }, { status: 500 });
   }
 }
