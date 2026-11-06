@@ -81,6 +81,10 @@ export default async function Home() {
     include: { 
       disjuntores: {
         include: {
+          eventosFalha: {
+            where: { fimEm: null },
+            take: 1
+          },
           leituras: {
             orderBy: { registradoEm: 'desc' },
             take: 15 // Pega as 15 leituras mais recentes

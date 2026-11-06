@@ -1,3 +1,7 @@
+import { getServerSession } from "next-auth/next";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth";
+import { buildMonthlyReport, TARIFA_KWH } from "@/lib/monthly-report";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 
@@ -8,54 +12,35 @@ export default async function RelatorioCopel(props: {
   const params = await props.params;
   const searchParams = await props.searchParams;
   const clienteId = params.id;
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email;
+  if (!email) redirect("/login");
 
   const dataHoje = new Date();
-  const mesAtual = searchParams.mes ? parseInt(searchParams.mes) : dataHoje.getMonth() + 1;
-  const anoAtual = searchParams.ano ? parseInt(searchParams.ano) : dataHoje.getFullYear();
+  const mesAtual = searchParams.mes ? Number(searchParams.mes) : dataHoje.getMonth() + 1;
+  const anoAtual = searchParams.ano ? Number(searchParams.ano) : dataHoje.getFullYear();
 
-  const dataInicio = new Date(anoAtual, mesAtual - 1, 1);
-  const dataFim = new Date(anoAtual, mesAtual, 1);
+  if (!Number.isInteger(mesAtual) || mesAtual < 1 || mesAtual > 12 || !Number.isInteger(anoAtual) || anoAtual < 2000 || anoAtual > 2100) {
+    return <div className="p-8">Mês ou ano inválido.</div>;
+  }
 
   const mesAnterior = mesAtual === 1 ? 12 : mesAtual - 1;
   const anoAnterior = mesAtual === 1 ? anoAtual - 1 : anoAtual;
   const mesSeguinte = mesAtual === 12 ? 1 : mesAtual + 1;
   const anoSeguinte = mesAtual === 12 ? anoAtual + 1 : anoAtual;
   
-  const nomeMes = dataInicio.toLocaleDateString('pt-BR', { month: 'long' });
-
-  const cliente = await prisma.usuario.findUnique({
-    where: { id: clienteId },
-    include: {
-      residencias: {
-        include: {
-          disjuntores: {
-            include: {
-              leituras: {
-                where: { registradoEm: { gte: dataInicio, lt: dataFim } }
-              }
-            }
-          }
-        }
-      }
-    }
+  const usuarioAtual = await prisma.usuario.findUnique({
+    where: { email },
+    select: { id: true, role: true },
   });
 
-  if (!cliente) return <div className="text-white p-8">Cliente não encontrado.</div>;
+  if (!usuarioAtual) redirect("/login");
+  if (usuarioAtual.role !== "ADMIN" && usuarioAtual.id !== clienteId) redirect("/");
 
-  const TARIFA_KWH = 0.85; 
-  let consumoTotalKwh = 0;
+  const report = await buildMonthlyReport(clienteId, mesAtual, anoAtual);
+  if (!report) return <div className="text-white p-8">Cliente não encontrado.</div>;
 
-  const detalhesCircuitos = cliente.residencias.flatMap(r => 
-    r.disjuntores.map(d => {
-      const kwhCircuito = d.leituras.reduce((acc, leitura) => acc + (leitura.potencia / 1000), 0);
-      consumoTotalKwh += kwhCircuito;
-      return { nome: d.nome, kwh: kwhCircuito, valor: kwhCircuito * TARIFA_KWH };
-    })
-  );
-
-  const subtotal = consumoTotalKwh * TARIFA_KWH;
-  const estimativaImpostos = subtotal * 0.29;
-  const totalFatura = subtotal + estimativaImpostos;
+  const { cliente, detalhesCircuitos, nomeMes, subtotal, estimativaImpostos, totalFatura } = report;
 
   return (
     <div className="min-h-screen bg-[#0A1931] text-[#F6FAFD] p-8">
@@ -82,14 +67,18 @@ export default async function RelatorioCopel(props: {
           <p className="text-gray-600 mt-2 text-sm font-mono">ID Instalação: {cliente.id.split('-')[0]}</p>
         </div>
 
-        <h2 className="font-bold text-lg border-b-2 border-gray-200 pb-2 mb-4">Demonstrativo de Consumo por Circuito</h2>
+        <h2 className="font-bold text-lg border-b-2 border-gray-200 pb-2 mb-4">Estimativa de Consumo por Circuito</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Estimativa baseada em tensão nominal, potência aparente e fator de potência assumido igual a 1.
+          São integrados apenas intervalos entre amostras de até 15 segundos; lacunas maiores não são extrapoladas.
+        </p>
         <table className="w-full text-left mb-8 text-sm">
           <thead>
             <tr className="bg-gray-200">
               <th className="p-2">Circuito Monitorizado</th>
-              <th className="p-2 text-right">Consumo (kWh)</th>
-              <th className="p-2 text-right">Tarifa (R$)</th>
-              <th className="p-2 text-right">Valor (R$)</th>
+              <th className="p-2 text-right">Estimativa (kWh)</th>
+              <th className="p-2 text-right">Tarifa estimada (R$)</th>
+              <th className="p-2 text-right">Custo estimado (R$)</th>
             </tr>
           </thead>
           <tbody>
@@ -111,21 +100,24 @@ export default async function RelatorioCopel(props: {
         <div className="flex justify-end">
           <div className="w-64 bg-gray-50 p-4 rounded border border-gray-200">
             <div className="flex justify-between mb-2 text-sm text-gray-600">
-              <span>Subtotal Consumo:</span>
+              <span>Subtotal estimado:</span>
               <span>R$ {subtotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between mb-4 text-sm text-gray-600">
-              <span>Trib. (ICMS/PIS/COF):</span>
+              <span>Impostos estimados (29%):</span>
               <span>R$ {estimativaImpostos.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-black text-xl text-orange-600 border-t-2 border-gray-200 pt-2">
-              <span>Total a Pagar:</span>
+              <span>Total estimado:</span>
               <span>R$ {totalFatura.toFixed(2)}</span>
             </div>
           </div>
         </div>
 
-        <div className="mt-8 flex justify-center print:hidden">
+        <div className="mt-8 flex justify-center gap-4 print:hidden">
+          <Link className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-bold transition-colors" href={`/cliente/${clienteId}/relatorio/csv?mes=${mesAtual}&ano=${anoAtual}`}>
+            Baixar CSV
+          </Link>
           <Link className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded font-bold transition-colors" href="/">
             Voltar ao Painel
           </Link>

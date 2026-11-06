@@ -12,6 +12,17 @@ enum Role {
   CLIENTE
 }
 
+enum TipoFalha {
+  SOBRECARGA
+}
+
+enum StatusNotificacao {
+  PENDENTE
+  ENVIADA
+  FALHOU
+  NAO_CONFIGURADA
+}
+
 model Usuario {
   id          String       @id @default(uuid())
   nome        String
@@ -24,29 +35,47 @@ model Usuario {
 
 model Residencia {
   id          Int         @id @default(autoincrement())
-  nome        String      // Ex: "Casa Principal"
-  usuarioId   String      // <-- Atualizado para String para conectar com Usuario
+  nome        String // Ex: "Casa Principal"
+  usuarioId   String // <-- Atualizado para String para conectar com Usuario
   usuario     Usuario     @relation(fields: [usuarioId], references: [id])
   disjuntores Disjuntor[]
   criadoEm    DateTime    @default(now())
 }
 
 model Disjuntor {
-  id             Int        @id @default(autoincrement())
-  nome           String     // Ex: "Geral", "Chuveiro", "Ar-condicionado"
-  limiteCorrente Float      // Limiar de segurança em Amperes (para disparar o alerta)
+  id             Int           @id @default(autoincrement())
+  nome           String // Ex: "Geral", "Chuveiro", "Ar-condicionado"
+  limiteCorrente Float // Limiar de segurança em Amperes (para disparar o alerta)
   residenciaId   Int
-  residencia     Residencia @relation(fields: [residenciaId], references: [id], onDelete: Cascade)
+  residencia     Residencia    @relation(fields: [residenciaId], references: [id], onDelete: Cascade)
   leituras       Leitura[]
+  eventosFalha   EventoFalha[]
 }
 
 model Leitura {
-  id           Int        @id @default(autoincrement())
-  tensaoRms    Float
-  correnteRms  Float
-  potencia     Float
-  alerta       Boolean    @default(false)
-  disjuntorId  Int
-  disjuntor    Disjuntor  @relation(fields: [disjuntorId], references: [id], onDelete: Cascade)
-  registradoEm DateTime   @default(now())
+  id                 Int       @id @default(autoincrement())
+  tensaoNominalV     Float     @map("tensaoRms")
+  correnteRms        Float
+  potenciaAparenteVA Float     @map("potencia")
+  rssiDbm            Float?
+  alerta             Boolean   @default(false)
+  disjuntorId        Int
+  disjuntor          Disjuntor @relation(fields: [disjuntorId], references: [id], onDelete: Cascade)
+  registradoEm       DateTime  @default(now())
+}
+
+model EventoFalha {
+  id                 Int               @id @default(autoincrement())
+  tipo               TipoFalha
+  inicioEm           DateTime
+  detectadoEm        DateTime
+  fimEm              DateTime?
+  correnteMaxA       Float
+  limiteCorrenteA    Float
+  notificacaoStatus  StatusNotificacao @default(PENDENTE)
+  detalheNotificacao String?
+  disjuntorId        Int
+  disjuntor          Disjuntor         @relation(fields: [disjuntorId], references: [id], onDelete: Cascade)
+
+  @@index([disjuntorId, fimEm])
 }
